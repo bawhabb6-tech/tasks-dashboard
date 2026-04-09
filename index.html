@@ -160,9 +160,16 @@ td{padding:10px 14px;vertical-align:middle}
   <div class="login-box">
     <div style="font-size:44px;margin-bottom:10px">📋</div>
     <h2>لوحة المهام المشتركة</h2>
-    <p>اكتب اسمك للدخول مع فريقك</p>
+    <p id="login-step-label">اكتب اسمك للدخول</p>
     <input type="text" id="name-input" placeholder="اكتب اسمك..." maxlength="30"/>
-    <button onclick="login()">دخول ✓</button>
+    <div id="room-section" style="display:none;margin-bottom:12px">
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px">أدخل كود الغرفة أو اصنع غرفة جديدة</p>
+      <input type="text" id="room-input" placeholder="كود الغرفة (مثال: team-alpha)" maxlength="40" style="margin-bottom:8px;direction:ltr;letter-spacing:2px"/>
+      <div style="display:flex;gap:8px;margin-bottom:0">
+        <button style="flex:1;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:10px;color:#94a3b8;font-size:13px;cursor:pointer;font-family:inherit" onclick="genRoom()">🎲 غرفة عشوائية</button>
+      </div>
+    </div>
+    <button id="login-btn" onclick="loginStep()">التالي ←</button>
   </div>
 </div>
 
@@ -173,11 +180,13 @@ td{padding:10px 14px;vertical-align:middle}
 <div id="tc"></div>
 
 <header>
-  <h1>📋 لوحة <span>المهام المشتركة</span></h1>
+  <h1>📋 <span id="room-title">لوحة المهام</span></h1>
   <div class="hright">
     <div id="clock"></div>
     <div class="user-badge">👤 <span id="cur-user"></span></div>
-    <button class="logout-btn" onclick="logout()">تغيير الاسم</button>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:4px 10px;font-size:11px;color:#64748b">🔑 <span id="room-badge"></span></div>
+    <button class="logout-btn" onclick="copyRoomLink()" title="انسخ رابط الغرفة">🔗 شارك</button>
+    <button class="logout-btn" onclick="logout()">تغيير</button>
     <div class="bell">
       <button id="bb" onclick="toggleN()">🔔</button>
       <div class="badge" id="bdg"></div>
@@ -267,24 +276,69 @@ const SUPA_KEY='sb_publishable_hqM-BhnY0ez5GDme2UTX3A_RB4nbV_M';
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
 
 let tasks=[],currentUser=localStorage.getItem('team_user')||'';
+let currentRoom=localStorage.getItem('team_room')||'';
 let filter='all',selT='email',viewMode='card';
 let notifs=JSON.parse(localStorage.getItem('n3')||'[]');
 let onlineUsers=new Set(),presenceChannel;
 
+// read room from URL if present
+(function(){
+  const p=new URLSearchParams(location.search);
+  if(p.get('room')) currentRoom=p.get('room');
+})();
+
 const TM={email:{l:'إيميل',ic:'📧',cls:'te'},review:{l:'مراجعة',ic:'🔍',cls:'tr'},meeting:{l:'اجتماع',ic:'📅',cls:'tm'},report:{l:'تقرير',ic:'📊',cls:'tp'},other:{l:'أخرى',ic:'📌',cls:'to'}};
 const PC={عالي:'ph',متوسط:'pm',منخفض:'pl'};
 
-// LOGIN
-function login(){
-  const name=document.getElementById('name-input').value.trim();
-  if(!name){toast('أدخل اسمك','warn');return;}
-  currentUser=name; localStorage.setItem('team_user',name);
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('cur-user').textContent=name;
-  init();
+// LOGIN (2 steps: name → room)
+let loginPhase = currentRoom ? 2 : 1;
+
+function loginStep(){
+  if(loginPhase===1){
+    const name=document.getElementById('name-input').value.trim();
+    if(!name){toast('أدخل اسمك','warn');return;}
+    currentUser=name;
+    // show room step
+    loginPhase=2;
+    document.getElementById('login-step-label').textContent='اختر غرفة فريقك';
+    document.getElementById('name-input').style.display='none';
+    document.getElementById('room-section').style.display='block';
+    document.getElementById('login-btn').textContent='دخول ✓';
+    // pre-fill room if saved
+    if(localStorage.getItem('team_room')) document.getElementById('room-input').value=localStorage.getItem('team_room');
+  } else {
+    let room=document.getElementById('room-input').value.trim().toLowerCase().replace(/\s+/g,'-');
+    if(!room){toast('أدخل كود الغرفة','warn');return;}
+    currentRoom=room;
+    localStorage.setItem('team_user',currentUser);
+    localStorage.setItem('team_room',currentRoom);
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('cur-user').textContent=currentUser;
+    document.getElementById('room-badge').textContent=currentRoom;
+    document.getElementById('room-title').textContent='غرفة: '+currentRoom;
+    // update URL
+    const url=new URL(location.href);
+    url.searchParams.set('room',currentRoom);
+    history.replaceState({},'',url);
+    init();
+  }
 }
-function logout(){localStorage.removeItem('team_user');location.reload();}
-document.getElementById('name-input').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+
+function genRoom(){
+  const words=['alpha','beta','gamma','delta','eagle','falcon','tiger','cobra','storm','nova'];
+  const r=words[Math.floor(Math.random()*words.length)]+'-'+Math.floor(1000+Math.random()*9000);
+  document.getElementById('room-input').value=r;
+}
+
+function copyRoomLink(){
+  const url=new URL(location.href);
+  url.searchParams.set('room',currentRoom);
+  navigator.clipboard.writeText(url.toString()).then(()=>toast('✅ تم نسخ رابط الغرفة','ok'));
+}
+
+function logout(){localStorage.removeItem('team_user');localStorage.removeItem('team_room');location.href=location.pathname;}
+document.getElementById('name-input').addEventListener('keydown',e=>{if(e.key==='Enter')loginStep();});
+document.getElementById('room-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')loginStep();});
 
 // CLOCK
 function ck(){
@@ -301,6 +355,11 @@ ck();setInterval(ck,1000);
 // INIT
 async function init(){
   document.getElementById('cur-user').textContent=currentUser;
+  document.getElementById('room-badge').textContent=currentRoom;
+  document.getElementById('room-title').textContent='غرفة: '+currentRoom;
+  const url=new URL(location.href);
+  url.searchParams.set('room',currentRoom);
+  history.replaceState({},'',url);
   await loadTasks();
   setupRealtime();
   setupPresence();
@@ -308,15 +367,15 @@ async function init(){
 
 // LOAD
 async function loadTasks(){
-  const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false});
+  const {data,error}=await sb.from('tasks').select('*').eq('room_id',currentRoom).order('created_at',{ascending:false});
   if(error){toast('خطأ في تحميل المهام','err');return;}
   tasks=data||[]; updateAssignSelect(); render();
 }
 
 // REALTIME
 function setupRealtime(){
-  sb.channel('tasks-rt')
-    .on('postgres_changes',{event:'*',schema:'public',table:'tasks'},p=>{
+  sb.channel('tasks-rt-'+currentRoom)
+    .on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`room_id=eq.${currentRoom}`},p=>{
       if(p.eventType==='INSERT'){
         tasks.unshift(p.new);
         if(p.new.created_by!==currentUser){
@@ -336,7 +395,7 @@ function setupRealtime(){
 
 // PRESENCE
 function setupPresence(){
-  presenceChannel=sb.channel('presence-room',{config:{presence:{key:currentUser}}});
+  presenceChannel=sb.channel('presence-'+currentRoom,{config:{presence:{key:currentUser}}});
   presenceChannel.on('presence',{event:'sync'},()=>{
     onlineUsers=new Set(Object.keys(presenceChannel.presenceState()));
     renderOnline();
@@ -365,7 +424,8 @@ async function addTask(){
     date:document.getElementById('fd').value||null,
     time:document.getElementById('ft').value||null,
     assigned_to:document.getElementById('fa').value||null,
-    done:false,created_by:currentUser
+    done:false,created_by:currentUser,
+    room_id:currentRoom
   }]);
   if(error){toast('خطأ في الإضافة','err');console.error(error);return;}
   document.getElementById('fi').value='';
@@ -473,9 +533,17 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
 document.getElementById('fi').addEventListener('keydown',e=>{if(e.key==='Enter')addTask();});
 
-if(currentUser){
+if(currentUser && currentRoom){
   document.getElementById('login-screen').style.display='none';
   init();
+} else if(currentUser && !currentRoom){
+  // skip to room step
+  loginPhase=2;
+  document.getElementById('login-step-label').textContent='اختر غرفة فريقك';
+  document.getElementById('name-input').style.display='none';
+  document.getElementById('name-input').value=currentUser;
+  document.getElementById('room-section').style.display='block';
+  document.getElementById('login-btn').textContent='دخول ✓';
 }
 renderN();
 </script>
